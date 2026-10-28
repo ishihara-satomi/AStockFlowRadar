@@ -1,0 +1,64 @@
+
+name: iOS Build Check
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'AStockFlowRadar.zip'
+      - '.github/workflows/ios-build.yml'
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Unpack source
+        run: |
+          mkdir -p source
+          unzip -o AStockFlowRadar.zip -d source
+
+          PROJECT_YML="$(find source -name project.yml -print -quit)"
+          if [ -z "$PROJECT_YML" ]; then
+            echo "ERROR: project.yml not found in ZIP"
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$PROJECT_YML")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project directory: $PROJECT_DIR"
+
+      - name: Generate Xcode project
+        run: |
+          cd "$PROJECT_DIR"
+          xcodegen generate
+
+      - name: Build iOS Simulator app
+        run: |
+          set -o pipefail
+          cd "$PROJECT_DIR"
+          xcodebuild \
+            -project AStockFlowRadar.xcodeproj \
+            -scheme AStockFlowRadar \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Upload build results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AStockFlowRadar-build-results
+          path: |
+            ${{ runner.temp }}/DerivedData/Build/Products/Debug-iphonesimulator/A股资金雷达.app
+            ${{ runner.temp }}/DerivedData/Build/Products/Debug-iphonesimulator/AStockFlowRadar.app
+            ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: warn
